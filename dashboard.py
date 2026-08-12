@@ -78,11 +78,12 @@ ADMINISTRATOR = 0x8
 FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 
 app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="")
-app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(32))
-app.config.update(
-    SESSION_COOKIE_SAMESITE="Lax",   # same-origin now — no cross-site cookie needed
-    SESSION_COOKIE_SECURE=os.getenv("RENDER") is not None,  # HTTPS on Render, plain HTTP OK for local dev
-)
+
+# Hardcoded fallback key guarantees sessions persist across restarts
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "heavenly_permanent_secret_key_2026")
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = 86400 * 7  # 7 days
 
 # ── bot reference, set from main-5.py at startup ────────────────────────────
 _bot = None
@@ -274,7 +275,9 @@ def callback():
         ),
     }
     session["guilds"] = manageable
+    session.permanent = True
     return redirect("/")
+
 
 
 @app.route("/logout", methods=["POST"])
