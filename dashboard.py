@@ -212,41 +212,29 @@ def _get_filtered_guilds():
     if not user_guilds:
         return []
 
+    # 1. Force IDs to text to prevent JavaScript rounding errors
     for g in user_guilds:
         if "id" in g:
             g["id"] = str(g["id"])
 
     bot_guild_ids = set()
-    token = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
-    
-    print("\n--- DASHBOARD DEBUG ---", flush=True)
-    print(f"Token found in Render? {'YES' if token else 'NO'}", flush=True)
+    bot_api = os.getenv("BOT_API_URL")
 
-    if token:
+    # 2. Ask Wispbyte exactly which servers the bot is in
+    if bot_api:
         try:
-            res = requests.get(
-                "https://discord.com/api/v10/users/@me/guilds",
-                headers={"Authorization": f"Bot {token}"},
-                timeout=5
-            )
-            print(f"Discord API Status: {res.status_code}", flush=True)
+            headers = {"X-API-Key": os.getenv("INTERNAL_API_KEY", "super-secret-key-123")}
+            res = requests.get(f"{bot_api}/api/bot-guilds", headers=headers, timeout=5)
             if res.ok:
-                data = res.json()
-                bot_guild_ids.update(str(g["id"]) for g in data)
-                print(f"Bot is in {len(data)} servers total.", flush=True)
-            else:
-                print(f"Discord API Error: {res.text}", flush=True)
-        except Exception as e:
-            print(f"Request Error: {e}", flush=True)
+                bot_guild_ids.update(res.json().get("guild_ids", []))
+        except Exception:
+            pass
 
+    # 3. Filter the dropdown list!
     if bot_guild_ids:
-        filtered = [g for g in user_guilds if str(g["id"]) in bot_guild_ids]
-        print(f"Filtered list down to: {len(filtered)} servers.", flush=True)
-        print("-----------------------\n", flush=True)
-        return filtered
+        return [g for g in user_guilds if str(g["id"]) in bot_guild_ids]
 
-    print("WARNING: bot_guild_ids is empty. Returning ALL admin servers to prevent lockout.")
-    print("-----------------------\n", flush=True)
+    # Fallback just in case the bot is offline
     return user_guilds
     
     
