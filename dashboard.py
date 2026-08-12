@@ -133,15 +133,24 @@ KNOWN_COMMANDS = [
     ("afk", "AFK status"),
 ]
 
-# ── db helpers ────────────────────────────────────────────────────────────
+# Database Helpers
 def get_db():
     if "db" not in g:
         conn = sqlite3.connect(DB_PATH, timeout=5)
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.row_factory = sqlite3.Row
+        
+        # Auto-create missing tables so the dashboard never crashes on an empty DB
+        conn.execute("CREATE TABLE IF NOT EXISTS guild_config (guild_id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE IF NOT EXISTS warnings (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, user_id TEXT, reason TEXT, created_at TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS reaction_roles (message_id TEXT, emoji TEXT, role_id TEXT, guild_id TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS tags (name TEXT, content TEXT, creator_id TEXT, guild_id TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS command_settings (command_name TEXT, enabled INTEGER, allowed_role_ids TEXT, guild_id TEXT)")
+        conn.commit()
+        
         g.db = conn
     return g.db
-
+    
 
 @app.teardown_appcontext
 def close_db(exc):
