@@ -570,5 +570,10 @@ def api_health():
 
 
 if __name__ == "__main__":
+    from waitress import serve
+    port = int(os.getenv("PORT", 10000))
+    print(f"Starting Waitress WSGI server on 0.0.0.0:{port}...")
+    serve(app, host="0.0.0.0", port=port)
+    
     # standalone dev run (no live bot data — /channels, /roles, /guilds will be empty)
-    app.run(port=5000, debug=True)
+    app.run(port=10000, debug=True)
