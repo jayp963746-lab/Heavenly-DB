@@ -172,10 +172,21 @@ def check_access():
         return jsonify({"error": "unauthorized", "login_url": "/login"}), 401
     # if the route touches one guild, make sure this user can manage it
     guild_id = request.view_args.get("guild_id") if request.view_args else None
+
+    
     if guild_id is not None:
-        allowed = {g["id"] for g in session.get("guilds", [])}
-        if guild_id not in allowed:
+        allowed = set()
+        for g_item in session.get("guilds", []):
+            if isinstance(g_item, dict) and "id" in g_item:
+                allowed.add(g_item["id"])
+                allowed.add(str(g_item["id"]))
+                try:
+                    allowed.add(int(g_item["id"]))
+                except (ValueError, TypeError):
+                    pass
+        if guild_id not in allowed and str(guild_id) not in allowed:
             return jsonify({"error": "forbidden — you don't manage this server"}), 403
+            
 
 
 # ── serve the built React app ───────────────────────────────────────────
