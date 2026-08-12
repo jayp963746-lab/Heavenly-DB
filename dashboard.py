@@ -188,28 +188,26 @@ def serve_frontend(path):
 
 
 # ── Discord OAuth2 ───────────────────────────────────────────────────────
-@app.route("/login")
-def login():
-    state = secrets.token_urlsafe(16)
-    session["oauth_state"] = state
-    params = {
-        "client_id": DISCORD_CLIENT_ID,
-        "redirect_uri": DISCORD_REDIRECT_URI,
-        "response_type": "code",
-        "scope": "identify guilds",
-        "state": state,
-        "prompt": "none",
-    }
-    return redirect(f"https://discord.com/api/oauth2/authorize?{urlencode(params)}")
+def _get_filtered_guilds():
+    user_guilds = session.get("guilds", [])
 
+    # If live bot process is running in memory, filter by joined servers
+    if bot and hasattr(bot, "guilds"):
+        try:
+            bot_ids = {str(g.id) for g in bot.guilds}
+            return [g for g in user_guilds if str(g["id"]) in bot_ids]
+        except Exception:
+            pass
 
+    # When running in standalone dashboard mode, return all servers you manage
+    return user_guilds
+    
+    
 @app.route("/callback")
 def callback():
-    if request.args.get("state") != session.pop("oauth_state", None):
-        return jsonify({"error": "invalid oauth state"}), 400
     code = request.args.get("code")
     if not code:
-        return jsonify({"error": request.args.get("error", "missing code")}), 400
+        return jsonify({"error": "missing code"}), 400
 
     token_res = requests.post(
         "https://discord.com/api/oauth2/token",
@@ -225,28 +223,33 @@ def callback():
     )
     if not token_res.ok:
         return jsonify({"error": "token exchange failed", "detail": token_res.text}), 400
-    access_token = token_res.json()["access_token"]
+
+    access_token = token_res.json().get("access_token")
     auth_header = {"Authorization": f"Bearer {access_token}"}
 
     me = requests.get("https://discord.com/api/users/@me", headers=auth_header, timeout=10).json()
     my_guilds = requests.get("https://discord.com/api/users/@me/guilds", headers=auth_header, timeout=10).json()
 
-    bot_guild_ids = {g_["id"] for g_ in (run_on_bot(_bot_guilds(), default=[]) or [])}
-
     manageable = []
-    for g_ in my_guilds:
-        perms = int(g_.get("permissions", 0))
-        can_manage = bool(perms & MANAGE_GUILD) or bool(perms & ADMINISTRATOR)
-        if can_manage and int(g_["id"]) in bot_guild_ids:
-            icon = (
-                f"https://cdn.discordapp.com/icons/{g_['id']}/{g_['icon']}.png"
-                if g_.get("icon") else None
-            )
-            manageable.append({"id": int(g_["id"]), "name": g_["name"], "icon_url": icon})
+    if isinstance(my_guilds, list):
+        for g_ in my_guilds:
+            perms = int(g_.get("permissions", 0))
+            is_owner = bool(g_.get("owner"))
+            can_manage = is_owner or bool(perms & MANAGE_GUILD) or bool(perms & ADMINISTRATOR)
+            if can_manage:
+                icon = (
+                    f"https://cdn.discordapp.com/icons/{g_['id']}/{g_['icon']}.png"
+                    if g_.get("icon") else None
+                )
+                manageable.append({
+                    "id": str(g_["id"]),
+                    "name": g_.get("name", "Unknown"),
+                    "icon_url": icon
+                })
 
     session["user"] = {
-        "id": me["id"],
-        "username": me["username"],
+        "id": str(me.get("id")),
+        "username": me.get("username", "User"),
         "avatar_url": (
             f"https://cdn.discordapp.com/avatars/{me['id']}/{me['avatar']}.png"
             if me.get("avatar") else None
@@ -254,7 +257,7 @@ def callback():
     }
     session["guilds"] = manageable
     return redirect("/")
-
+    
 
 @app.route("/logout", methods=["POST"])
 def logout():
