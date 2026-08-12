@@ -5,6 +5,12 @@ import requests
 from flask import Flask, jsonify, request, session, redirect, send_from_directory, g
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+bot = None
+
+def set_bot(b):
+    global bot
+    bot = b
+    
 # Attempt to import bot helpers if available in main.py
 try:
     from main import run_on_bot, _bot_guilds, DB_PATH
