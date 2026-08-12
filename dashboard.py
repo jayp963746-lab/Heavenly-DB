@@ -209,26 +209,48 @@ def serve_frontend(path):
 # ── Discord OAuth2 ───────────────────────────────────────────────────────
 def _get_filtered_guilds():
     user_guilds = session.get("guilds", [])
-    
-    # 1. Force IDs to text so JavaScript doesn't round the numbers!
-    for g in user_guilds:
-        if "id" in g:
-            g["id"] = str(g["id"])
+    if not user_guilds:
+        return []
 
-    # 2. Ask Discord directly which servers the bot is in
-    bot_token = os.getenv("DISCORD_BOT_TOKEN")
-    if bot_token:
+    bot_guild_ids = set()
+
+    # 1. Try checking live bot instance
+    try:
+        if bot and hasattr(bot, "guilds") and bot.guilds:
+            bot_guild_ids.update(str(g.id) for g in bot.guilds)
+    except Exception:
+        pass
+
+    # 2. Try importing bot from main.py
+    if not bot_guild_ids:
         try:
-            headers = {"Authorization": f"Bot {bot_token}"}
-            res = requests.get("https://discord.com/api/users/@me/guilds", headers=headers, timeout=5)
-            if res.ok:
-                bot_ids = {str(b["id"]) for b in res.json()}
-                # Only keep servers where the bot is also present
-                return [g for g in user_guilds if str(g["id"]) in bot_ids]
+            from main import bot as main_bot
+            if main_bot and hasattr(main_bot, "guilds") and main_bot.guilds:
+                bot_guild_ids.update(str(g.id) for g in main_bot.guilds)
         except Exception:
             pass
 
+    # 3. Direct Discord API check using Bot Token (100% reliable)
+    if not bot_guild_ids:
+        token = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
+        if token:
+            try:
+                res = requests.get(
+                    "https://discord.com/api/v10/users/@me/guilds",
+                    headers={"Authorization": f"Bot {token}"},
+                    timeout=5
+                )
+                if res.ok:
+                    bot_guild_ids.update(str(g["id"]) for g in res.json())
+            except Exception:
+                pass
+
+    # Filter out any server where the bot is NOT present
+    if bot_guild_ids:
+        return [g for g in user_guilds if str(g["id"]) in bot_guild_ids]
+
     return user_guilds
+    
     
     
  # Discord OAuth Routes
