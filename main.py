@@ -3313,7 +3313,7 @@ def run_dashboard_in_thread():
     # guild names, member counts, channel/role lists, etc.
     dashboard.set_bot(bot)
 
-    port = int(os.getenv("PORT") or os.getenv("DASHBOARD_PORT", "5000"))
+    port = int(os.getenv("PORT") or os.getenv("DASHBOARD_PORT", "10000"))
     serve(dashboard_app, host="0.0.0.0", port=port, _quiet=True)
 
 
