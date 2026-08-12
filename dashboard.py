@@ -79,11 +79,16 @@ FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 
 app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="")
 
-# Hardcoded fallback key guarantees sessions persist across restarts
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "heavenly_permanent_secret_key_2026")
-app.config["SESSION_COOKIE_SECURE"] = True
+# Hardcoded fallback key guarantees sessions NEVER break on process reloads
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "heavenly_static_secret_key_998877665544332211")
+
+# Cookie settings optimized for Render reverse proxy & mobile browsers
+app.config["SESSION_COOKIE_NAME"] = "heavenly_session"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SECURE"] = False  # Prevents proxy HTTPS mismatch drops
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["PERMANENT_SESSION_LIFETIME"] = 86400 * 7  # 7 days
+app.config["PERMANENT_SESSION_LIFETIME"] = 86400 * 7
+
 
 # ── bot reference, set from main-5.py at startup ────────────────────────────
 _bot = None
@@ -266,6 +271,7 @@ def callback():
                 "icon_url": icon
             })
 
+        session.permanent = True
     session["user"] = {
         "id": str(me.get("id")),
         "username": me.get("username", "User"),
@@ -275,10 +281,9 @@ def callback():
         ),
     }
     session["guilds"] = manageable
-    session.permanent = True
+    session.modified = True
     return redirect("/")
-
-
+    
 
 @app.route("/logout", methods=["POST"])
 def logout():
