@@ -253,9 +253,8 @@ def callback():
 
     manageable = []    
     for g_ in my_guilds:    
-        perms = int(g_.get("permissions", 0))       
-                can_manage = bool(g_.get("owner")) or bool(perms & MANAGE_GUILD) or bool(perms & ADMINISTRATOR) or bool(perms & 0x4) or bool(perms & 0x2)
-        
+        perms = int(g_.get("permissions", 0))        
+                can_manage = bool(g_.get("owner")) or bool(perms & MANAGE_GUILD) or bool(perms & ADMINISTRATOR) or bool(perms & 0x4) or bool(perms & 0x2)        
                 if can_manage:        
             icon = (            
                 f"https://cdn.discordapp.com/icons/{g_['id']}/{g_['icon']}.png"
