@@ -54,6 +54,7 @@ configure.
 """
 
 import os
+import requests
 import json
 import secrets
 import sqlite3
@@ -67,6 +68,8 @@ from flask import Flask, jsonify, request, g, session, redirect, send_from_direc
 
 DB_PATH = os.getenv("BOT_DB_PATH", "bot.db")
 API_KEY = os.getenv("DASHBOARD_API_KEY")  # optional shared secret, for server-to-server calls
+BOT_API_URL = os.getenv("BOT_API_URL")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "super-secret-key-123")
 
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
@@ -195,7 +198,27 @@ def check_access():
         
         if target_id_str not in allowed_ids:
             return jsonify({"error": "forbidden - you don't manage this server"}), 403
-            
+
+@app.route("/api/guild/<guild_id>/overview")
+def api_overview(guild_id):
+    bot_api = os.getenv("BOT_API_URL")
+    if not bot_api:
+        return jsonify({"error": "BOT_API_URL environment variable is missing"}), 500
+
+    try:
+        headers = {"X-API-Key": os.getenv("INTERNAL_API_KEY", "super-secret-key-123")}
+        response = requests.get(
+            f"{bot_api}/api/guild/{guild_id}/overview",
+            headers=headers,
+            timeout=5
+        )
+        if response.ok:
+            return jsonify(response.json())
+        return jsonify({"error": "Failed to fetch stats from bot"}), response.status_code
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Could not connect to bot API: {str(e)}"}), 503
+        
 
 # ── serve the built React app ───────────────────────────────────────────
 @app.route("/", defaults={"path": ""})
