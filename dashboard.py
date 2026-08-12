@@ -218,11 +218,6 @@ def login():
     query = "&".join(f"{k}={v}" for k, v in params.items())
     return redirect(f"https://discord.com/api/oauth2/authorize?{query}")
 
-
-@app.route("/callback")
-def callback():
-    # ... (the rest of your callback function stays the same) ...
-
     
 @app.route("/callback")
 def callback():
