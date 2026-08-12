@@ -212,45 +212,42 @@ def _get_filtered_guilds():
     if not user_guilds:
         return []
 
+    for g in user_guilds:
+        if "id" in g:
+            g["id"] = str(g["id"])
+
     bot_guild_ids = set()
-
-    # 1. Try checking live bot instance
-    try:
-        if bot and hasattr(bot, "guilds") and bot.guilds:
-            bot_guild_ids.update(str(g.id) for g in bot.guilds)
-    except Exception:
-        pass
-
-    # 2. Try importing bot from main.py
-    if not bot_guild_ids:
-        try:
-            from main import bot as main_bot
-            if main_bot and hasattr(main_bot, "guilds") and main_bot.guilds:
-                bot_guild_ids.update(str(g.id) for g in main_bot.guilds)
-        except Exception:
-            pass
-
-    # 3. Direct Discord API check using Bot Token (100% reliable)
-    if not bot_guild_ids:
-        token = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
-        if token:
-            try:
-                res = requests.get(
-                    "https://discord.com/api/v10/users/@me/guilds",
-                    headers={"Authorization": f"Bot {token}"},
-                    timeout=5
-                )
-                if res.ok:
-                    bot_guild_ids.update(str(g["id"]) for g in res.json())
-            except Exception:
-                pass
-
-    # Filter out any server where the bot is NOT present
-    if bot_guild_ids:
-        return [g for g in user_guilds if str(g["id"]) in bot_guild_ids]
-
-    return user_guilds
+    token = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
     
+    print("\n--- DASHBOARD DEBUG ---", flush=True)
+    print(f"Token found in Render? {'YES' if token else 'NO'}", flush=True)
+
+    if token:
+        try:
+            res = requests.get(
+                "https://discord.com/api/v10/users/@me/guilds",
+                headers={"Authorization": f"Bot {token}"},
+                timeout=5
+            )
+            print(f"Discord API Status: {res.status_code}", flush=True)
+            if res.ok:
+                data = res.json()
+                bot_guild_ids.update(str(g["id"]) for g in data)
+                print(f"Bot is in {len(data)} servers total.", flush=True)
+            else:
+                print(f"Discord API Error: {res.text}", flush=True)
+        except Exception as e:
+            print(f"Request Error: {e}", flush=True)
+
+    if bot_guild_ids:
+        filtered = [g for g in user_guilds if str(g["id"]) in bot_guild_ids]
+        print(f"Filtered list down to: {len(filtered)} servers.", flush=True)
+        print("-----------------------\n", flush=True)
+        return filtered
+
+    print("WARNING: bot_guild_ids is empty. Returning ALL admin servers to prevent lockout.")
+    print("-----------------------\n", flush=True)
+    return user_guilds
     
     
  # Discord OAuth Routes
