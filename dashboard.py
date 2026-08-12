@@ -202,6 +202,27 @@ def _get_filtered_guilds():
     # When running in standalone dashboard mode, return all servers you manage
     return user_guilds
     
+ # Discord OAuth Routes
+@app.route("/login")
+def login():
+    state = secrets.token_urlsafe(16)    
+    session["oauth_state"] = state
+    params = {
+        "client_id": DISCORD_CLIENT_ID,
+        "redirect_uri": DISCORD_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "identify guilds",
+        "state": state,
+        "prompt": "consent",
+    }
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    return redirect(f"https://discord.com/api/oauth2/authorize?{query}")
+
+
+@app.route("/callback")
+def callback():
+    # ... (the rest of your callback function stays the same) ...
+
     
 @app.route("/callback")
 def callback():
