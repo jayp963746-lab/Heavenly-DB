@@ -201,12 +201,29 @@ def logout():
 # API Endpoints
 def _get_filtered_guilds():
     user_guilds = session.get("guilds", [])
-    bot_guilds_live = run_on_bot(_bot_guilds(), default=None)
-    if bot_guilds_live is not None:
-        bot_ids = {str(g_["id"]) for g_ in bot_guilds_live}
-        return [g for g in user_guilds if str(g["id"]) in bot_ids]
-    return user_guilds
+    bot_ids = set()
 
+    # 1. Fetch live guild IDs directly from the bot instance
+    if bot and hasattr(bot, "guilds"):
+        try:
+            bot_ids.update(str(g.id) for g in bot.guilds)
+        except Exception:
+            pass
+
+    # 2. Backup check against database config
+    try:
+        db = get_db()
+        rows = db.execute("SELECT guild_id FROM guild_config").fetchall()
+        bot_ids.update(str(r["guild_id"]) for r in rows)
+    except Exception:
+        pass
+
+    # Strictly filter out any server where the bot isn't present
+    if bot_ids:
+        return [g for g in user_guilds if str(g["id"]) in bot_ids]
+
+    return user_guilds
+    
 
 @app.route("/api/me")
 def api_me():
@@ -250,3 +267,15 @@ def update_config_row(table, guild_id, fields: dict):
     db.execute(f"UPDATE {table} SET {set_clause} WHERE guild_id=?", (*fields.values(), guild_id))
     db.commit()
     return get_config_row(table, guild_id)
+    @app.route("/api/guild/<guild_id>/warnings")
+def api_guild_warnings(guild_id):
+    try:
+        db = get_db()
+        limit = request.args.get("limit", 5, type=int)
+        rows = db.execute(
+            "SELECT * FROM warnings WHERE guild_id=? ORDER BY id DESC LIMIT ?",
+            (str(guild_id), limit)
+        ).fetchall()
+        return jsonify([row_to_dict(r) for r in rows])
+    except Exception:
+        return jsonify([])
