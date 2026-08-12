@@ -214,7 +214,7 @@ def callback():
         return jsonify({"error": "invalid oauth state"}), 400
     code = request.args.get("code")
     if not code:
-        return jsonify({"error": request.args.get("error", "missing code")}), 400
+        return jsonify({"error": "missing code"}), 400
 
     token_res = requests.post(
         "https://discord.com/api/oauth2/token",
@@ -230,38 +230,44 @@ def callback():
     )
     if not token_res.ok:
         return jsonify({"error": "token exchange failed", "detail": token_res.text}), 400
-    access_token = token_res.json()["access_token"]
+
+    access_token = token_res.json().get("access_token")
     auth_header = {"Authorization": f"Bearer {access_token}"}
 
-    me = requests.get("https://discord.com/api/users/@me", headers=auth_header, timeout=10).json()
-    my_guilds = requests.get("https://discord.com/api/users/@me/guilds", headers=auth_header, timeout=10).json()
+    me_res = requests.get("https://discord.com/api/users/@me", headers=auth_header, timeout=10)
+    guilds_res = requests.get("https://discord.com/api/users/@me/guilds", headers=auth_header, timeout=10)
 
+    if not me_res.ok or not guilds_res.ok:
+        return jsonify({"error": "Failed to fetch profile/guilds from Discord"}), 400
 
-    bot_guilds_live = run_on_bot(_bot_guilds(), default=None)
-    if bot_guilds_live is not None:
-        bot_guild_ids = {g_["id"] for g_ in bot_guilds_live}
-    else:
-        db = get_db()
-        rows = db.execute("SELECT guild_id FROM guild_config").fetchall()
-        bot_guild_ids = {r["guild_id"] for r in rows}
+    me = me_res.json()
+    my_guilds = guilds_res.json()
 
-        manageable = []    
-    for g_ in my_guilds:    
-        perms = int(g_.get("permissions", 0))        
-        is_owner = bool(g_.get("owner"))        
-        has_admin = bool(perms & ADMINISTRATOR)                
-        has_manage = bool(perms & MANAGE_GUILD)        
-        if is_owner or has_admin or has_manage:        
-            icon = (            
+    if not isinstance(my_guilds, list):
+        return jsonify({"error": "Discord rate limited or returned invalid data. Try again in 1 minute."}), 429
+
+    manageable = []
+    for g_ in my_guilds:
+        if not isinstance(g_, dict):
+            continue
+        perms = int(g_.get("permissions", 0))
+        is_owner = bool(g_.get("owner"))
+        # 0x20 = MANAGE_GUILD, 0x8 = ADMINISTRATOR
+        can_manage = is_owner or bool(perms & 0x20) or bool(perms & 0x8)
+        if can_manage:
+            icon = (
                 f"https://cdn.discordapp.com/icons/{g_['id']}/{g_['icon']}.png"
                 if g_.get("icon") else None
             )
-            manageable.append({"id": int(g_["id"]), "name": g_["name"], "icon_url": icon})
-            
+            manageable.append({
+                "id": str(g_["id"]),
+                "name": str(g_.get("name", "Unknown")),
+                "icon_url": icon
+            })
 
     session["user"] = {
-        "id": me["id"],
-        "username": me["username"],
+        "id": str(me.get("id")),
+        "username": me.get("username", "User"),
         "avatar_url": (
             f"https://cdn.discordapp.com/avatars/{me['id']}/{me['avatar']}.png"
             if me.get("avatar") else None
