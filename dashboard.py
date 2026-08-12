@@ -244,7 +244,7 @@ def callback():
     for g_ in my_guilds:
         perms = int(g_.get("permissions", 0))
         can_manage = bool(perms & MANAGE_GUILD) or bool(perms & ADMINISTRATOR)
-        if can_manage:
+        if can_manage and int(g_["id"]) in bot_guild_ids:
             icon = (
                 f"https://cdn.discordapp.com/icons/{g_['id']}/{g_['icon']}.png"
                 if g_.get("icon") else None
