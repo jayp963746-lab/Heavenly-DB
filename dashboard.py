@@ -5,12 +5,13 @@ import requests
 from flask import Flask, jsonify, request, session, redirect, send_from_directory, g
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+# Global bot instance set by main.py
 bot = None
 
 def set_bot(b):
     global bot
     bot = b
-    
+
 # Attempt to import bot helpers if available in main.py
 try:
     from main import run_on_bot, _bot_guilds, DB_PATH
@@ -223,7 +224,7 @@ def _get_filtered_guilds():
         return [g for g in user_guilds if str(g["id"]) in bot_ids]
 
     return user_guilds
-    
+
 
 @app.route("/api/me")
 def api_me():
@@ -267,7 +268,9 @@ def update_config_row(table, guild_id, fields: dict):
     db.execute(f"UPDATE {table} SET {set_clause} WHERE guild_id=?", (*fields.values(), guild_id))
     db.commit()
     return get_config_row(table, guild_id)
-    @app.route("/api/guild/<guild_id>/warnings")
+
+
+@app.route("/api/guild/<guild_id>/warnings")
 def api_guild_warnings(guild_id):
     try:
         db = get_db()
@@ -279,3 +282,4 @@ def api_guild_warnings(guild_id):
         return jsonify([row_to_dict(r) for r in rows])
     except Exception:
         return jsonify([])
+    
