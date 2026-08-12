@@ -171,23 +171,17 @@ def check_access():
     if not session.get("user"):
         return jsonify({"error": "unauthorized", "login_url": "/login"}), 401
     # if the route touches one guild, make sure this user can manage it
-    guild_id = request.view_args.get("guild_id") if request.view_args else None
-
-    
+        guild_id = request.view_args.get("guild_id") if request.view_args else None
     if guild_id is not None:
-        allowed = set()
-        for g_item in session.get("guilds", []):
-            if isinstance(g_item, dict) and "id" in g_item:
-                allowed.add(g_item["id"])
-                allowed.add(str(g_item["id"]))
-                try:
-                    allowed.add(int(g_item["id"]))
-                except (ValueError, TypeError):
-                    pass
-        if guild_id not in allowed and str(guild_id) not in allowed:
+        target_id_str = str(guild_id)
+        allowed_ids = {
+            str(g_item["id"])
+            for g_item in session.get("guilds", [])
+            if isinstance(g_item, dict) and "id" in g_item
+        }
+        if target_id_str not in allowed_ids:
             return jsonify({"error": "forbidden — you don't manage this server"}), 403
             
-
 
 # ── serve the built React app ───────────────────────────────────────────
 @app.route("/", defaults={"path": ""})
@@ -251,11 +245,13 @@ def callback():
         rows = db.execute("SELECT guild_id FROM guild_config").fetchall()
         bot_guild_ids = {r["guild_id"] for r in rows}
 
-    manageable = []    
+        manageable = []    
     for g_ in my_guilds:    
         perms = int(g_.get("permissions", 0))        
-                can_manage = bool(g_.get("owner")) or bool(perms & MANAGE_GUILD) or bool(perms & ADMINISTRATOR) or bool(perms & 0x4) or bool(perms & 0x2)        
-                if can_manage:        
+        is_owner = bool(g_.get("owner"))        
+        has_admin = bool(perms & ADMINISTRATOR)                
+        has_manage = bool(perms & MANAGE_GUILD)        
+        if is_owner or has_admin or has_manage:        
             icon = (            
                 f"https://cdn.discordapp.com/icons/{g_['id']}/{g_['icon']}.png"
                 if g_.get("icon") else None
