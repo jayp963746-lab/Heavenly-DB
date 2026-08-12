@@ -231,18 +231,26 @@ def callback():
     me = requests.get("https://discord.com/api/users/@me", headers=auth_header, timeout=10).json()
     my_guilds = requests.get("https://discord.com/api/users/@me/guilds", headers=auth_header, timeout=10).json()
 
-    bot_guild_ids = {g_["id"] for g_ in (run_on_bot(_bot_guilds(), default=[]) or [])}
+
+    bot_guilds_live = run_on_bot(_bot_guilds(), default=None)
+    if bot_guilds_live is not None:
+        bot_guild_ids = {g_["id"] for g_ in bot_guilds_live}
+    else:
+        db = get_db()
+        rows = db.execute("SELECT guild_id FROM guild_config").fetchall()
+        bot_guild_ids = {r["guild_id"] for r in rows}
 
     manageable = []
     for g_ in my_guilds:
         perms = int(g_.get("permissions", 0))
         can_manage = bool(perms & MANAGE_GUILD) or bool(perms & ADMINISTRATOR)
-        if can_manage and int(g_["id"]) in bot_guild_ids:
+        if can_manage:
             icon = (
                 f"https://cdn.discordapp.com/icons/{g_['id']}/{g_['icon']}.png"
                 if g_.get("icon") else None
             )
             manageable.append({"id": int(g_["id"]), "name": g_["name"], "icon_url": icon})
+            
 
     session["user"] = {
         "id": me["id"],
