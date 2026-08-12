@@ -160,23 +160,33 @@ PUBLIC_PATHS = {"/api/health", "/login", "/callback", "/logout"}
 
 @app.before_request
 def check_access():
-    if not request.path.startswith("/api/") and request.path not in PUBLIC_PATHS:
-        return  # let static frontend files (and the SPA catch-all) through
-    if request.path in PUBLIC_PATHS:
+    if not request.path.startswith("/api/") or request.path in PUBLIC_PATHS:
         return
-    # server-to-server calls (a shared secret, no browser session)
+
     if API_KEY and request.headers.get("X-API-Key") == API_KEY:
         return
-    # browser calls — require a Discord login
+
     if not session.get("user"):
         return jsonify({"error": "unauthorized", "login_url": "/login"}), 401
-    # if the route touches one guild, make sure this user can manage it
-    guild_id = request.view_args.get("guild_id") if request.view_args else None
-    if guild_id is not None:
-        allowed = {g["id"] for g in session.get("guilds", [])}
-        if guild_id not in allowed:
-            return jsonify({"error": "forbidden — you don't manage this server"}), 403
 
+    # Safely extract guild_id from the URL 
+    guild_id = None
+    if request.view_args and "guild_id" in request.view_args:
+        guild_id = request.view_args["guild_id"]
+    else:
+        parts = request.path.split("/")
+        if "guild" in parts:
+            idx = parts.index("guild")
+            if len(parts) > idx + 1:
+                guild_id = parts[idx + 1]
+
+    if guild_id is not None:
+        target_id_str = str(guild_id)
+        allowed_ids = {str(g.get("id")) for g in session.get("guilds", []) if isinstance(g, dict)}
+        
+        if target_id_str not in allowed_ids:
+            return jsonify({"error": "forbidden - you don't manage this server"}), 403
+            
 
 # ── serve the built React app ───────────────────────────────────────────
 @app.route("/", defaults={"path": ""})
@@ -190,17 +200,27 @@ def serve_frontend(path):
 # ── Discord OAuth2 ───────────────────────────────────────────────────────
 def _get_filtered_guilds():
     user_guilds = session.get("guilds", [])
+    
+    # 1. Force IDs to text so JavaScript doesn't round the numbers!
+    for g in user_guilds:
+        if "id" in g:
+            g["id"] = str(g["id"])
 
-    # If live bot process is running in memory, filter by joined servers
-    if bot and hasattr(bot, "guilds"):
+    # 2. Ask Discord directly which servers the bot is in
+    bot_token = os.getenv("DISCORD_BOT_TOKEN")
+    if bot_token:
         try:
-            bot_ids = {str(g.id) for g in bot.guilds}
-            return [g for g in user_guilds if str(g["id"]) in bot_ids]
+            headers = {"Authorization": f"Bot {bot_token}"}
+            res = requests.get("https://discord.com/api/users/@me/guilds", headers=headers, timeout=5)
+            if res.ok:
+                bot_ids = {str(b["id"]) for b in res.json()}
+                # Only keep servers where the bot is also present
+                return [g for g in user_guilds if str(g["id"]) in bot_ids]
         except Exception:
             pass
 
-    # When running in standalone dashboard mode, return all servers you manage
     return user_guilds
+    
     
  # Discord OAuth Routes
 @app.route("/login")
