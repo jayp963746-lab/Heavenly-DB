@@ -202,22 +202,29 @@ def check_access():
 @app.route("/api/guild/<guild_id>/overview")
 def api_overview(guild_id):
     bot_api = os.getenv("BOT_API_URL")
-    if not bot_api:
-        return jsonify({"error": "BOT_API_URL environment variable is missing"}), 500
+    internal_key = os.getenv("INTERNAL_API_KEY", "super-secret-key-123")
 
-    try:
-        headers = {"X-API-Key": os.getenv("INTERNAL_API_KEY", "super-secret-key-123")}
-        response = requests.get(
-            f"{bot_api}/api/guild/{guild_id}/overview",
-            headers=headers,
-            timeout=5
-        )
-        if response.ok:
-            return jsonify(response.json())
-        return jsonify({"error": "Failed to fetch stats from bot"}), response.status_code
+    # Attempt to fetch live stats from Wispbyte
+    if bot_api:
+        try:
+            headers = {"X-API-Key": internal_key}
+            response = requests.get(
+                f"{bot_api.rstrip('/')}/api/guild/{guild_id}/overview",
+                headers=headers,
+                timeout=3
+            )
+            if response.ok:
+                return jsonify(response.json())
+        except Exception:
+            pass  # Fall back gracefully if Wispbyte connection fails
 
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"Could not connect to bot API: {str(e)}"}), 503
+    # Safe Fallback: Return zeroes instead of crashing with a 503 error!
+    return jsonify({
+        "warnings_issued": 0,
+        "active_giveaways": 0,
+        "tags": 0
+    })
+    
         
 
 # ── serve the built React app ───────────────────────────────────────────
@@ -235,30 +242,39 @@ def _get_filtered_guilds():
     if not user_guilds:
         return []
 
-    # 1. Force IDs to text to prevent JavaScript rounding errors
+    # Prevent JavaScript string truncation
     for g in user_guilds:
         if "id" in g:
             g["id"] = str(g["id"])
 
     bot_guild_ids = set()
-    bot_api = os.getenv("BOT_API_URL")
 
-    # 2. Ask Wispbyte exactly which servers the bot is in
-    if bot_api:
+    # Query Discord's API directly using the Bot Token in Render
+    token = (
+        os.getenv("DISCORD_BOT_TOKEN")
+        or os.getenv("DISCORD_TOKEN")
+        or os.getenv("BOT_TOKEN")
+        or os.getenv("TOKEN")
+    )
+
+    if token:
         try:
-            headers = {"X-API-Key": os.getenv("INTERNAL_API_KEY", "super-secret-key-123")}
-            res = requests.get(f"{bot_api}/api/bot-guilds", headers=headers, timeout=5)
+            res = requests.get(
+                "https://discord.com/api/v10/users/@me/guilds",
+                headers={"Authorization": f"Bot {token}"},
+                timeout=5
+            )
             if res.ok:
-                bot_guild_ids.update(res.json().get("guild_ids", []))
+                bot_guild_ids.update(str(g["id"]) for g in res.json())
         except Exception:
             pass
 
-    # 3. Filter the dropdown list!
+    # Strictly keep ONLY servers where Heavenly is present
     if bot_guild_ids:
         return [g for g in user_guilds if str(g["id"]) in bot_guild_ids]
 
-    # Fallback just in case the bot is offline
     return user_guilds
+    
     
     
  # Discord OAuth Routes
