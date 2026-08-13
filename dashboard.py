@@ -201,26 +201,43 @@ def check_access():
 
 @app.route("/api/internal/bot-guilds")
 def internal_bot_guilds():
-    # Wispbyte has the token natively, so it checks Discord for Render!
-    import os, requests
+    import requests, os
     from flask import jsonify
-    
     token = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
-    if not token:
-        return jsonify({"guild_ids": []})
-        
+    if not token: return jsonify({"guild_ids": []})
     try:
-        res = requests.get(
-            "https://discord.com/api/v10/users/@me/guilds",
-            headers={"Authorization": f"Bot {token}"},
-            timeout=5
-        )
-        if res.ok:
-            return jsonify({"guild_ids": [str(g["id"]) for g in res.json()]})
-    except Exception:
-        pass
-        
+        res = requests.get("https://discord.com/api/v10/users/@me/guilds", headers={"Authorization": f"Bot {token}"}, timeout=3)
+        if res.ok: return jsonify({"guild_ids": [str(g["id"]) for g in res.json()]})
+    except: pass
     return jsonify({"guild_ids": []})
+
+def _get_filtered_guilds():
+    import requests, os
+    from flask import session
+    user_guilds = session.get("guilds", [])
+    if not user_guilds: return []
+    
+    bot_guild_ids = set()
+    
+    # 1. Check if we are on Wispbyte (Token exists natively)
+    token = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
+    if token:
+        try:
+            res = requests.get("https://discord.com/api/v10/users/@me/guilds", headers={"Authorization": f"Bot {token}"}, timeout=3)
+            if res.ok: bot_guild_ids.update(str(g["id"]) for g in res.json())
+        except: pass
+        
+    # 2. Check if we are on Render (Ask Wispbyte!)
+    bot_api = os.getenv("BOT_API_URL")
+    if not bot_guild_ids and bot_api:
+        try:
+            res = requests.get(f"{bot_api.rstrip('/')}/api/internal/bot-guilds", timeout=3)
+            if res.ok: bot_guild_ids.update(res.json().get("guild_ids", []))
+        except: pass
+
+    if bot_guild_ids:
+        return [g for g in user_guilds if str(g.get("id")) in bot_guild_ids]
+    return user_guilds
 
     
 
@@ -441,40 +458,34 @@ def api_guilds():
     return jsonify(session.get("guilds", []))
 
 
-    db = get_db()
-    warning_count = db.execute(
-        "SELECT COUNT(*) c FROM warnings WHERE guild_id=?", (guild_id,)
-    ).fetchone()["c"]
-    rpg_count = db.execute(
-        "SELECT COUNT(*) c FROM rpg_characters WHERE guild_id=?", (guild_id,)
-    ).fetchone()["c"]
-    active_giveaways = db.execute(
-        "SELECT COUNT(*) c FROM giveaways WHERE guild_id=? AND ended=0", (guild_id,)
-    ).fetchone()["c"]
-    open_tags = db.execute(
-        "SELECT COUNT(*) c FROM tags WHERE guild_id=?", (guild_id,)
-    ).fetchone()["c"]
+    @app.route("/api/guild/<guild_id>/overview")
+def api_overview(guild_id):
+    import requests, os, sqlite3
+    from flask import jsonify
+    
+    # 1. If we are on Wispbyte (Read local database)
+    db_path = os.getenv("BOT_DB_PATH", "bot.db")
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM warnings WHERE guild_id=?", (str(guild_id),))
+            warns = cursor.fetchone()[0]
+            conn.close()
+            return jsonify({"warnings_issued": warns, "active_giveaways": 0, "tags": 0})
+        except: pass
 
-    config = get_config_row("guild_config", guild_id)
-    antinuke = get_config_row("antinuke_config", guild_id)
-    antiraid = get_config_row("antiraid_config", guild_id)
-
-    live = run_on_bot(_guild_snapshot(guild_id), default=None) or {
-        "id": guild_id, "name": None, "icon_url": None, "member_count": None,
-    }
-
-    return jsonify({
-        **live,
-        "warning_count": warning_count,
-        "rpg_count": rpg_count,
-        "active_giveaways": active_giveaways,
-        "tag_count": open_tags,
-        "automod_on": bool(config["automod_enabled"]),
-        "antinuke_on": bool(antinuke["enabled"]),
-        "antiraid_on": bool(antiraid["enabled"]),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    })
-
+    # 2. If we are on Render (Ask Wispbyte!)
+    bot_api = os.getenv("BOT_API_URL")
+    if bot_api:
+        try:
+            res = requests.get(f"{bot_api.rstrip('/')}/api/guild/{guild_id}/overview", timeout=3)
+            if res.ok: return jsonify(res.json())
+        except: pass
+        
+    # Fallback if both fail
+    return jsonify({"warnings_issued": 0, "active_giveaways": 0, "tags": 0})
+    
 
 @app.route("/api/guild/<int:guild_id>/channels")
 def api_channels(guild_id):
