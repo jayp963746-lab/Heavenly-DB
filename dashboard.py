@@ -222,9 +222,8 @@ def internal_bot_guilds():
         
     return jsonify({"guild_ids": []})
     
-    
 
-# ── serve the built React app ───────────────────────────────────────────
+# --- serve the built React app
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve_frontend(path):
