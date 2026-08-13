@@ -199,33 +199,30 @@ def check_access():
         if target_id_str not in allowed_ids:
             return jsonify({"error": "forbidden - you don't manage this server"}), 403
 
-@app.route("/api/guild/<guild_id>/overview")
-def api_overview(guild_id):
-    bot_api = os.getenv("BOT_API_URL")
-    internal_key = os.getenv("INTERNAL_API_KEY", "super-secret-key-123")
-
-    # Attempt to fetch live stats from Wispbyte
-    if bot_api:
-        try:
-            headers = {"X-API-Key": internal_key}
-            response = requests.get(
-                f"{bot_api.rstrip('/')}/api/guild/{guild_id}/overview",
-                headers=headers,
-                timeout=3
-            )
-            if response.ok:
-                return jsonify(response.json())
-        except Exception:
-            pass  # Fall back gracefully if Wispbyte connection fails
-
-    # Safe Fallback: Return zeroes instead of crashing with a 503 error!
-    return jsonify({
-        "warnings_issued": 0,
-        "active_giveaways": 0,
-        "tags": 0
-    })
+@app.route("/api/internal/bot-guilds")
+def internal_bot_guilds():
+    # Wispbyte has the token natively, so it checks Discord for Render!
+    import os, requests
+    from flask import jsonify
     
+    token = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
+    if not token:
+        return jsonify({"guild_ids": []})
         
+    try:
+        res = requests.get(
+            "https://discord.com/api/v10/users/@me/guilds",
+            headers={"Authorization": f"Bot {token}"},
+            timeout=5
+        )
+        if res.ok:
+            return jsonify({"guild_ids": [str(g["id"]) for g in res.json()]})
+    except Exception:
+        pass
+        
+    return jsonify({"guild_ids": []})
+    
+    
 
 # ── serve the built React app ───────────────────────────────────────────
 @app.route("/", defaults={"path": ""})
@@ -242,34 +239,39 @@ def _get_filtered_guilds():
     if not user_guilds:
         return []
 
-    # Prevent JavaScript string truncation
+    # Prevent JavaScript string errors
     for g in user_guilds:
         if "id" in g:
             g["id"] = str(g["id"])
 
     bot_guild_ids = set()
 
-    # Query Discord's API directly using the Bot Token in Render
-    token = (
-        os.getenv("DISCORD_BOT_TOKEN")
-        or os.getenv("DISCORD_TOKEN")
-        or os.getenv("BOT_TOKEN")
-        or os.getenv("TOKEN")
-    )
-
+    # --- SCENARIO A: We are on Wispbyte (Token exists locally) ---
+    token = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
     if token:
         try:
             res = requests.get(
                 "https://discord.com/api/v10/users/@me/guilds",
                 headers={"Authorization": f"Bot {token}"},
-                timeout=5
+                timeout=3
             )
             if res.ok:
                 bot_guild_ids.update(str(g["id"]) for g in res.json())
         except Exception:
             pass
 
-    # Strictly keep ONLY servers where Heavenly is present
+    # --- SCENARIO B: We are on Render (Ask Wispbyte for the list) ---
+    if not bot_guild_ids:
+        bot_api = os.getenv("BOT_API_URL")
+        if bot_api:
+            try:
+                res = requests.get(f"{bot_api.rstrip('/')}/api/internal/bot-guilds", timeout=3)
+                if res.ok:
+                    bot_guild_ids.update(res.json().get("guild_ids", []))
+            except Exception:
+                pass
+
+    # --- FINAL FILTER ---
     if bot_guild_ids:
         return [g for g in user_guilds if str(g["id"]) in bot_guild_ids]
 
