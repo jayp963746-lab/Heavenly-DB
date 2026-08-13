@@ -432,8 +432,6 @@ def api_guilds():
     return jsonify(session.get("guilds", []))
 
 
-@app.route("/api/guild/<int:guild_id>/overview")
-def api_overview(guild_id):
     db = get_db()
     warning_count = db.execute(
         "SELECT COUNT(*) c FROM warnings WHERE guild_id=?", (guild_id,)
