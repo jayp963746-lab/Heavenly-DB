@@ -221,16 +221,8 @@ def internal_bot_guilds():
         pass
         
     return jsonify({"guild_ids": []})
+
     
-
-# --- serve the built React app
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def serve_frontend(path):
-    if path and os.path.exists(os.path.join(FRONTEND_DIST, path)):
-        return send_from_directory(FRONTEND_DIST, path)
-    return send_from_directory(FRONTEND_DIST, "index.html")
-
 
 # ── Discord OAuth2 ───────────────────────────────────────────────────────
 def _get_filtered_guilds():
@@ -661,7 +653,14 @@ def api_tags(guild_id):
 def api_health():
     return jsonify({"ok": True, "bot_connected": _bot is not None and _bot.loop is not None and _bot.loop.is_running()})
 
-
+# --- serve the built React app
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path):
+    if path and os.path.exists(os.path.join(FRONTEND_DIST, path)):
+        return send_from_directory(FRONTEND_DIST, path)
+    return send_from_directory(FRONTEND_DIST, "index.html")
+    
 if __name__ == "__main__":
     from waitress import serve
     port = int(os.getenv("PORT", 10000))
